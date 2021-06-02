@@ -1,0 +1,15 @@
+[package]
+name = "ronty"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1"
+image = "0.23"
+itertools = "0.10"
+minifb = "0.19"
+v4l = "0.12"
+
+[dependencies.dlib-face-recognition]
+git = "https://github.com/FauxFaux/dlib-face-recognition"
+features = ["embed-fd-nn", "embed-lp"]
