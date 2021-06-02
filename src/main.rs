@@ -1,11 +1,15 @@
 use std::io;
 
+use crate::faces::Comms;
+use crate::latest::Latest;
 use anyhow::{Context, Result};
 use dlib_face_recognition::*;
 use image::codecs::jpeg::JpegDecoder;
 use image::imageops::{crop_imm, resize, FilterType};
 use image::*;
+use itertools::Itertools;
 use minifb::{Key, Window, WindowOptions};
+use std::sync::{Arc, Mutex};
 use v4l::buffer::Type;
 use v4l::context::enum_devices;
 use v4l::io::traits::CaptureStream;
@@ -13,10 +17,18 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::FourCC;
 
-const WIDTH: u32 = 1024;
-const HEIGHT: u32 = 768;
+mod faces;
+mod img;
+mod latest;
+
+const WIDTH: u32 = 320;
+const HEIGHT: u32 = 240;
 
 fn main() -> Result<()> {
+    let comms = Arc::new(Comms::default());
+    let theirs = Arc::clone(&comms);
+    std::thread::spawn(move || faces::main(theirs));
+
     let mut dev = Device::new(0).with_context(|| "Failed to open device")?;
     let mut format = dev.format().with_context(|| "reading format")?;
 
@@ -24,8 +36,11 @@ fn main() -> Result<()> {
     let green = Rgb([0, 255, 0]);
     let blue = Rgb([32, 32, 255]);
 
-    format.width = WIDTH as u32;
-    format.height = HEIGHT as u32;
+    let cam_width = 1024;
+    let cam_height = 768;
+
+    format.width = cam_width;
+    format.height = cam_height;
     format.fourcc = FourCC::new(b"MJPG");
 
     dev.set_format(&format)?;
@@ -45,78 +60,37 @@ fn main() -> Result<()> {
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
-    let det = FaceDetector::default();
-    // let det = FaceDetectorCnn::default();
-    let landmarks = LandmarkPredictor::default();
-
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        for i in buffer.iter_mut() {
-            *i = 0; // write something more funny here!
-        }
-
         let (buf, meta) = stream.next()?;
 
-        // let mut image = image_from_yuyv(&buf);
-
         let decoded = JpegDecoder::new(io::Cursor::new(buf))?;
-        let mut image = image::ImageBuffer::new(WIDTH as u32, HEIGHT as u32);
+        let mut image = image::ImageBuffer::new(cam_width, cam_height);
         decoded.read_image(image.as_mut())?;
 
-        let matrix = dlib_face_recognition::ImageMatrix::from_image(&image);
-        let locs = det.face_locations(&matrix);
-        let r = match locs.iter().next() {
-            Some(r) => r,
-            None => continue,
-        };
-        // for r in locs.iter()
-        //     draw_rectangle(&mut image, &r, red);
+        comms.input.put(image.clone());
 
-        let landmarks = landmarks.face_landmarks(&matrix, &r);
-        let centre = landmarks[33];
-        let xs = landmarks.iter().map(|p| p.x()).collect::<Vec<_>>();
-        let ys = landmarks.iter().map(|p| p.y()).collect::<Vec<_>>();
+        let boxes = comms.output.lock().expect("panicked").clone();
 
-        // guaranteed by clamp
-        let min_x = xs
-            .iter()
-            .min()
-            .expect("known length")
-            .clone()
-            .clamp(0, i64::from(WIDTH)) as u32;
-        let max_x = xs
-            .iter()
-            .max()
-            .expect("known length")
-            .clone()
-            .clamp(0, i64::from(WIDTH)) as u32;
-        let min_y = ys
-            .iter()
-            .min()
-            .expect("known length")
-            .clone()
-            .clamp(0, i64::from(HEIGHT)) as u32;
-        let max_y = ys
-            .iter()
-            .max()
-            .expect("known length")
-            .clone()
-            .clamp(0, i64::from(HEIGHT)) as u32;
+        // left eye
+        let mut bx = boxes.left_eye;
+        bx.y -= bx.h / 2;
+        bx.h *= 2;
+        let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
 
-        let image = crop_imm(&image, min_x, min_y, max_x - min_x, max_y - min_y);
+        let (w, h) = image.dimensions();
+        let xscale = (w as f32) / (WIDTH as f32);
+        let yscale = (h as f32) / (HEIGHT as f32);
+        let scale = xscale.max(yscale);
 
-        // for (x, point) in landmarks.iter().enumerate() {
-        //     let colour = match x {
-        //         36..=47 => green,
-        //         33 => blue,
-        //         _ => red,
-        //     };
-        //     draw_point(&mut image, &point, colour);
-        // }
+        let image = resize(
+            &image,
+            ((w as f32) / scale) as u32,
+            ((h as f32) / scale) as u32,
+            FilterType::Triangle,
+        );
 
-        let image = resize(&image, WIDTH, HEIGHT, FilterType::Triangle);
-
-        for h in 0..image.height() {
-            for w in 0..image.width() {
+        for h in 0..image.height().min(HEIGHT) {
+            for w in 0..image.width().min(WIDTH) {
                 let p = image.get_pixel(w, h).0;
                 buffer[(h * WIDTH + w) as usize] =
                     p[2] as u32 + 256 * p[1] as u32 + 256 * 256 * p[0] as u32;
