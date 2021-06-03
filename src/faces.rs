@@ -2,6 +2,8 @@ use std::io;
 use std::io::Write as _;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Result;
+
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, LandmarkPredictor, LandmarkPredictorTrait, Point,
 };
@@ -9,7 +11,7 @@ use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 
 use crate::img::Rect;
-use crate::latest::Latest;
+use crate::latest::{Latest, Token};
 
 #[derive(Copy, Clone, Default)]
 pub struct Boxen {
@@ -24,12 +26,17 @@ pub struct Comms {
     pub output: Mutex<Boxen>,
 }
 
-pub fn main(comms: Arc<Comms>) {
+pub fn main(
+    input: Arc<Latest<ImageBuffer<Rgb<u8>, Vec<u8>>>>,
+    output: Arc<Mutex<Boxen>>,
+) -> Result<()> {
     let det = FaceDetector::default();
     let landmarks = landmark_from_include();
 
+    let mut token = Token::default();
     loop {
-        let image = comms.input.get();
+        let (current, image) = input.when_changed_from(token);
+        token = current;
 
         let matrix = dlib_face_recognition::ImageMatrix::from_image(&image);
         let locs = det.face_locations(&matrix);
@@ -46,7 +53,7 @@ pub fn main(comms: Arc<Comms>) {
         let right_eye = bounding_box(&landmarks[42..=47]);
         let mouth = bounding_box(&landmarks[48..]);
 
-        let mut output = comms.output.lock().expect("panicked");
+        let mut output = output.lock().expect("panicked");
         output.left_eye = left_eye;
         output.right_eye = right_eye;
         output.mouth = mouth;

@@ -1,47 +1,35 @@
-use std::io;
+use std::sync::{Arc, Mutex};
 
-use crate::faces::Comms;
-use anyhow::{Context, Result};
-use dlib_face_recognition::*;
-use image::codecs::jpeg::JpegDecoder;
+use anyhow::Result;
 use image::imageops::{crop_imm, resize, FilterType};
-use image::*;
-use itertools::Itertools;
+use image::GenericImageView as _;
 use minifb::{Key, Window, WindowOptions};
-use std::sync::Arc;
-use v4l::buffer::Type;
-use v4l::context::enum_devices;
-use v4l::io::traits::CaptureStream;
-use v4l::prelude::*;
-use v4l::video::Capture;
-use v4l::FourCC;
+
+use crate::faces::Boxen;
+use crate::video::make_frames;
 
 mod faces;
 mod img;
 mod latest;
+mod video;
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
 
 fn main() -> Result<()> {
-    let comms = Arc::new(Comms::default());
-    let theirs = Arc::clone(&comms);
-    std::thread::spawn(move || faces::main(theirs));
+    let mut threads = Vec::new();
 
-    let mut dev = Device::new(0).with_context(|| "Failed to open device")?;
-    let mut format = dev.format().with_context(|| "reading format")?;
+    let (frames, frame_thread) = make_frames();
+    threads.push(frame_thread);
 
-    let cam_width = 1024;
-    let cam_height = 768;
-
-    format.width = cam_width;
-    format.height = cam_height;
-    format.fourcc = FourCC::new(b"MJPG");
-
-    dev.set_format(&format)?;
-
-    let mut stream = MmapStream::with_buffers(&mut dev, Type::VideoCapture, 4)
-        .with_context(|| "Failed to create buffer stream")?;
+    let boxen = Arc::new(Mutex::new(Boxen::default()));
+    {
+        let frames = Arc::clone(&frames);
+        let boxen = Arc::clone(&boxen);
+        threads.push(std::thread::spawn(move || -> Result<()> {
+            faces::main(frames, boxen)
+        }));
+    }
 
     let mut buffer: Vec<u32> = vec![0; (WIDTH * HEIGHT) as usize];
 
@@ -56,20 +44,13 @@ fn main() -> Result<()> {
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let (buf, _meta) = stream.next()?;
-
-        let decoded = JpegDecoder::new(io::Cursor::new(buf))?;
-        let mut image = image::ImageBuffer::new(cam_width, cam_height);
-        decoded.read_image(image.as_mut())?;
-
-        comms.input.put(image.clone());
-
-        let boxes = comms.output.lock().expect("panicked").clone();
+        let boxes = boxen.lock().expect("panicked").clone();
 
         // left eye
         let mut bx = boxes.left_eye;
         bx.y -= bx.h / 2;
         bx.h *= 2;
+        let image = frames.peek();
         let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
 
         let (w, h) = image.dimensions();
@@ -97,6 +78,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(never)]
 fn image_from_yuyv(buf: &[u8]) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     let mut image = image::ImageBuffer::new(WIDTH as u32, HEIGHT as u32);
 
@@ -111,6 +93,7 @@ fn image_from_yuyv(buf: &[u8]) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     image
 }
 
+#[cfg(never)]
 fn draw_rectangle(image: &mut RgbImage, rect: &Rectangle, colour: Rgb<u8>) {
     for x in rect.left..rect.right {
         image.put_pixel(x as u32, rect.top as u32, colour);
@@ -123,6 +106,7 @@ fn draw_rectangle(image: &mut RgbImage, rect: &Rectangle, colour: Rgb<u8>) {
     }
 }
 
+#[cfg(never)]
 fn draw_point(image: &mut RgbImage, point: &Point, colour: Rgb<u8>) {
     image.put_pixel(point.x() as u32, point.y() as u32, colour);
     image.put_pixel(point.x() as u32 + 1, point.y() as u32, colour);
