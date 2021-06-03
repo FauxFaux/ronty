@@ -1,3 +1,5 @@
+use std::io;
+use std::io::Write as _;
 use std::sync::{Arc, Mutex};
 
 use dlib_face_recognition::{
@@ -24,7 +26,7 @@ pub struct Comms {
 
 pub fn main(comms: Arc<Comms>) {
     let det = FaceDetector::default();
-    let landmarks = LandmarkPredictor::default();
+    let landmarks = landmark_from_include();
 
     loop {
         let image = comms.input.get();
@@ -40,12 +42,14 @@ pub fn main(comms: Arc<Comms>) {
 
         let landmarks = landmarks.face_landmarks(&matrix, &r);
 
-        // left eye
-        let mut bx = bounding_box(&landmarks[36..42]);
-        bx.y -= bx.h / 2;
-        bx.h *= 2;
+        let left_eye = bounding_box(&landmarks[36..=41]);
+        let right_eye = bounding_box(&landmarks[42..=47]);
+        let mouth = bounding_box(&landmarks[48..]);
 
-        comms.output.lock().expect("panicked").left_eye = bx;
+        let mut output = comms.output.lock().expect("panicked");
+        output.left_eye = left_eye;
+        output.right_eye = right_eye;
+        output.mouth = mouth;
     }
 }
 
@@ -76,4 +80,17 @@ fn minmax_by<T, F: FnMut(&&T) -> i64>(items: &[T], key: F) -> (&T, &T) {
         .minmax_by_key(key)
         .into_option()
         .expect("not empty")
+}
+
+fn landmark_from_include() -> LandmarkPredictor {
+    let mut t = tempfile::NamedTempFile::new().expect("creating temporary file");
+    io::copy(
+        &mut io::Cursor::new(&include_bytes!("../data/shape_predictor_68_face_landmarks.dat")[..]),
+        &mut t,
+    )
+    .expect("writing file");
+    t.flush().expect("flushing file");
+    let landmarks = LandmarkPredictor::new(t.path()).expect("static data");
+    t.close().expect("removing temporary file");
+    landmarks
 }

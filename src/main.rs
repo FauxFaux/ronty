@@ -1,7 +1,6 @@
 use std::io;
 
 use crate::faces::Comms;
-use crate::latest::Latest;
 use anyhow::{Context, Result};
 use dlib_face_recognition::*;
 use image::codecs::jpeg::JpegDecoder;
@@ -9,7 +8,7 @@ use image::imageops::{crop_imm, resize, FilterType};
 use image::*;
 use itertools::Itertools;
 use minifb::{Key, Window, WindowOptions};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use v4l::buffer::Type;
 use v4l::context::enum_devices;
 use v4l::io::traits::CaptureStream;
@@ -31,10 +30,6 @@ fn main() -> Result<()> {
 
     let mut dev = Device::new(0).with_context(|| "Failed to open device")?;
     let mut format = dev.format().with_context(|| "reading format")?;
-
-    let red = Rgb([255, 0, 0]);
-    let green = Rgb([0, 255, 0]);
-    let blue = Rgb([32, 32, 255]);
 
     let cam_width = 1024;
     let cam_height = 768;
@@ -61,7 +56,7 @@ fn main() -> Result<()> {
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        let (buf, meta) = stream.next()?;
+        let (buf, _meta) = stream.next()?;
 
         let decoded = JpegDecoder::new(io::Cursor::new(buf))?;
         let mut image = image::ImageBuffer::new(cam_width, cam_height);
@@ -105,7 +100,7 @@ fn main() -> Result<()> {
 fn image_from_yuyv(buf: &[u8]) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     let mut image = image::ImageBuffer::new(WIDTH as u32, HEIGHT as u32);
 
-    for i in 0..((WIDTH * HEIGHT) as usize).min((buf.len() / 2)) {
+    for i in 0..((WIDTH * HEIGHT) as usize).min(buf.len() / 2) {
         let p = buf[i * 2];
         image.put_pixel(
             (i % WIDTH as usize) as u32,

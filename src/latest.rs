@@ -1,4 +1,4 @@
-use std::sync::{Condvar, LockResult, Mutex};
+use std::sync::{Condvar, Mutex};
 
 #[derive(Default)]
 pub struct Latest<T> {
