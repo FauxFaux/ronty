@@ -812,6 +812,7 @@ dependencies = [
  "image",
  "itertools",
  "minifb",
+ "num-integer",
  "tempfile",
  "v4l",
 ]
