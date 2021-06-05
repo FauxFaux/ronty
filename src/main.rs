@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use image::{GenericImageView, ImageBuffer, Rgb};
-use image::imageops::{crop_imm, FilterType, resize};
+use image::imageops::{crop_imm, FilterType, resize, flip_horizontal, flip_vertical};
 use minifb::{Key, Window, WindowOptions};
 use num_integer::Roots;
 
@@ -31,9 +31,17 @@ fn main() -> Result<()> {
         }));
     }
 
-    let mut left = Win::new("left", 320, 240, 100, 100)?;
-    let mut right = Win::new("right", 320, 240, 500, 100)?;
+    let mut left = Win::new("left", 500, 300, 100, 100)?;
+    let mut right = Win::new("right", 500, 300, 500, 100)?;
     let mut mouth = Win::new("mouth", 720, 320, 100, 400)?;
+    let mut debug = Win::new("debug", 1024, 768, 800, 400)?;
+    // let mut debug = Win::new("debug", 1280, 720, 800, 400)?;
+
+    let mut distances = Ring::with_capacity(25);
+
+    let mut left_centres = Ring::with_capacity(5);
+    let mut right_centres = Ring::with_capacity(5);
+    let mut mouth_centres = Ring::with_capacity(5);
 
     loop {
         for win in [&left, &right, &mouth] {
@@ -54,7 +62,10 @@ fn main() -> Result<()> {
             boxes.left_eye.centre(),
             boxes.right_eye.centre(),);
 
-        println!("{}", pupil_distance);
+        distances.push(pupil_distance);
+
+        // println!("{} {}", pupil_distance, distances.mean());
+        let pupil_distance = distances.mean();
 
         let bounds = image.dimensions();
 
@@ -62,16 +73,22 @@ fn main() -> Result<()> {
 
         let scale = |w: u32, h: u32| ((w as f32 / s) as u32, (h as f32 / s) as u32);
 
+        left_centres.push(boxes.left_eye.centre());
+        right_centres.push(boxes.right_eye.centre());
+        mouth_centres.push(boxes.mouth.centre());
+
         for (c, win) in [
-            (boxes.left_eye.centre(), &mut left),
-            (boxes.right_eye.centre(), &mut right),
-            (boxes.mouth.centre(), &mut mouth),
+            (left_centres.mean(), &mut left),
+            (right_centres.mean(), &mut right),
+            (mouth_centres.mean(), &mut mouth),
         ] {
             let bx = pick(c, scale(win.w, win.h), bounds);
             let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
             let image = resize(&image, win.w, win.h, FilterType::Triangle);
             win.update(&image)?;
         }
+
+        debug.update(&image)?;
 
         // let bl = pick(boxes.left_eye.centre(), scale(left.w, left.h), bounds);
         // left.update(&crop_imm(&image, bl.x, bl.y, bl.w, bl.h))?;
@@ -204,4 +221,86 @@ fn draw_point(image: &mut RgbImage, point: &Point, colour: Rgb<u8>) {
     image.put_pixel(point.x() as u32 + 1, point.y() as u32, colour);
     image.put_pixel(point.x() as u32 + 1, point.y() as u32 + 1, colour);
     image.put_pixel(point.x() as u32, point.y() as u32 + 1, colour);
+}
+
+struct Ring<T> {
+    buf: Box<[T]>,
+    idx: usize,
+    end: usize,
+}
+
+impl<T: Default + Clone> Ring<T> {
+    fn with_capacity(cap: usize) -> Ring<T> {
+        Ring {
+            buf: vec![T::default(); cap].into_boxed_slice(),
+            idx: 0,
+            end: 0,
+        }
+    }
+}
+
+impl<T: Clone> Ring<T> {
+    fn push(&mut self, val: T) {
+        if self.end < self.buf.len() {
+            self.end += 1;
+        }
+
+        self.buf[self.idx] = val;
+        self.idx += 1;
+        if self.idx >= self.buf.len() {
+            self.idx = 0;
+        }
+    }
+}
+
+impl<T> Ring<T> {
+    fn is_empty(&self) -> bool {
+        self.end == 0
+    }
+}
+
+impl Ring<u32> {
+    fn mean(&self) -> u32 {
+        if self.is_empty() {
+            return 0
+        }
+        let mut sum = 0;
+        for val in &self.buf[..self.end] {
+            sum += val;
+        }
+        // lazy
+        sum / (self.end as u32)
+    }
+}
+
+impl Ring<f32> {
+    fn mean(&self) -> f32 {
+        if self.is_empty() {
+            return 0.
+        }
+        let mut sum = 0.;
+        for val in &self.buf[..self.end] {
+            sum += val;
+        }
+        // lazy
+        sum / (self.end as f32)
+    }
+}
+
+impl Ring<(u32, u32)> {
+    fn mean(&self) -> (u32, u32) {
+        if self.is_empty() {
+            return (0, 0)
+        }
+        let mut sum = (0, 0);
+        for val in &self.buf[..self.end] {
+            sum.0 += val.0;
+            sum.1 += val.1;
+        }
+
+        (
+            sum.0 / self.end as u32,
+            sum.1 / self.end as u32,
+            )
+    }
 }
