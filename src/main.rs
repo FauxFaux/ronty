@@ -2,14 +2,13 @@ use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use image::imageops::{crop_imm, flip_horizontal, flip_vertical, resize, FilterType};
 use image::{GenericImageView, ImageBuffer, Rgb};
-use image::imageops::{crop_imm, FilterType, resize, flip_horizontal, flip_vertical};
 use minifb::{Key, Window, WindowOptions};
-use num_integer::Roots;
 
-use crate::faces::Boxen;
-use crate::video::make_frames;
+use crate::faces::{Boxen, Fleek};
 use crate::img::Rect;
+use crate::video::make_frames;
 
 mod faces;
 mod img;
@@ -52,15 +51,17 @@ fn main() -> Result<()> {
 
         let boxes = boxen.lock().expect("panicked").clone();
 
-        // booting
-        if boxes.left_eye.w == 0 {
+        if boxes.landmarks.is_empty() {
             continue;
         }
+
+        let left_eye = boxes.landmarks[0].left_eye().centre();
+        let right_eye = boxes.landmarks[0].right_eye().centre();
+        let mouth_centre = boxes.landmarks[0].mouth().centre();
+
         let image = frames.peek();
 
-        let pupil_distance = distance(
-            boxes.left_eye.centre(),
-            boxes.right_eye.centre(),);
+        let pupil_distance = distance(left_eye.tuple(), right_eye.tuple());
 
         distances.push(pupil_distance);
 
@@ -73,9 +74,9 @@ fn main() -> Result<()> {
 
         let scale = |w: u32, h: u32| ((w as f32 / s) as u32, (h as f32 / s) as u32);
 
-        left_centres.push(boxes.left_eye.centre());
-        right_centres.push(boxes.right_eye.centre());
-        mouth_centres.push(boxes.mouth.centre());
+        left_centres.push(left_eye.tuple());
+        right_centres.push(right_eye.tuple());
+        mouth_centres.push(mouth_centre.tuple());
 
         for (c, win) in [
             (left_centres.mean(), &mut left),
@@ -110,7 +111,6 @@ fn main() -> Result<()> {
         //     ((h as f32) / scale) as u32,
         //     FilterType::Triangle,
         // );
-
     }
 }
 
@@ -151,7 +151,11 @@ impl Win {
     }
 
     fn update<I: GenericImageView<Pixel = Rgb<u8>>>(&mut self, image: &I) -> Result<()> {
-        assert_eq!((self.w, self.h), (image.width(), image.height()), "invalid image dimesions");
+        assert_eq!(
+            (self.w, self.h),
+            (image.width(), image.height()),
+            "invalid image dimesions"
+        );
 
         for h in 0..image.height() {
             for w in 0..image.width() {
@@ -182,9 +186,7 @@ fn pick((cx, cy): (u32, u32), (w, h): (u32, u32), (bw, bh): (u32, u32)) -> Rect 
     let x = cx - w / 2;
     let y = cy - h / 2;
     // TODO: in bounds
-    Rect {
-        x, y, w, h
-    }
+    Rect { x, y, w, h }
 }
 
 #[cfg(never)]
@@ -262,7 +264,7 @@ impl<T> Ring<T> {
 impl Ring<u32> {
     fn mean(&self) -> u32 {
         if self.is_empty() {
-            return 0
+            return 0;
         }
         let mut sum = 0;
         for val in &self.buf[..self.end] {
@@ -276,7 +278,7 @@ impl Ring<u32> {
 impl Ring<f32> {
     fn mean(&self) -> f32 {
         if self.is_empty() {
-            return 0.
+            return 0.;
         }
         let mut sum = 0.;
         for val in &self.buf[..self.end] {
@@ -290,7 +292,7 @@ impl Ring<f32> {
 impl Ring<(u32, u32)> {
     fn mean(&self) -> (u32, u32) {
         if self.is_empty() {
-            return (0, 0)
+            return (0, 0);
         }
         let mut sum = (0, 0);
         for val in &self.buf[..self.end] {
@@ -298,9 +300,6 @@ impl Ring<(u32, u32)> {
             sum.1 += val.1;
         }
 
-        (
-            sum.0 / self.end as u32,
-            sum.1 / self.end as u32,
-            )
+        (sum.0 / self.end as u32, sum.1 / self.end as u32)
     }
 }

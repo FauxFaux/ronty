@@ -1,23 +1,26 @@
+use std::convert::TryInto;
 use std::io;
 use std::io::Write as _;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, LandmarkPredictor, LandmarkPredictorTrait, Point,
 };
 use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 
-use crate::img::Rect;
+use crate::img::{Pt, Rect};
 use crate::latest::{Latest, Token};
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
+pub struct Landmarks {
+    inner: [Pt; 68],
+}
+
+#[derive(Clone, Default)]
 pub struct Boxen {
-    pub left_eye: Rect,
-    pub right_eye: Rect,
-    pub mouth: Rect,
+    pub landmarks: Vec<Landmarks>,
 }
 
 #[derive(Default)]
@@ -49,14 +52,10 @@ pub fn main(
 
         let landmarks = landmarks.face_landmarks(&matrix, &r);
 
-        let left_eye = bounding_box(&landmarks[36..=41]);
-        let right_eye = bounding_box(&landmarks[42..=47]);
-        let mouth = bounding_box(&landmarks[48..]);
+        let landmarks = Landmarks::from_dlib(&landmarks);
 
         let mut output = output.lock().expect("panicked");
-        output.left_eye = left_eye;
-        output.right_eye = right_eye;
-        output.mouth = mouth;
+        output.landmarks = vec![landmarks];
     }
 }
 
@@ -100,4 +99,54 @@ fn landmark_from_include() -> LandmarkPredictor {
     let landmarks = LandmarkPredictor::new(t.path()).expect("static data");
     t.close().expect("removing temporary file");
     landmarks
+}
+
+impl Landmarks {
+    fn from_dlib(dlib: &[Point]) -> Landmarks {
+        assert_eq!(68, dlib.len());
+        let clomp = |v: i64| (v.clamp(0, u32::MAX as i64) as u32);
+        let inner = dlib
+            .into_iter()
+            .map(|p| Pt {
+                x: clomp(p.x()),
+                y: clomp(p.y()),
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("invalid number of landmarks");
+        Landmarks { inner }
+    }
+
+    pub fn left_eye(&self) -> &[Pt] {
+        &self.inner[36..=41]
+    }
+
+    pub fn right_eye(&self) -> &[Pt] {
+        &self.inner[42..=47]
+    }
+
+    pub fn mouth(&self) -> &[Pt] {
+        &self.inner[48..]
+    }
+}
+
+impl AsRef<[Pt]> for Landmarks {
+    fn as_ref(&self) -> &[Pt] {
+        &self.inner
+    }
+}
+
+pub trait Fleek {
+    fn centre(&self) -> Pt;
+}
+
+impl Fleek for &[Pt] {
+    fn centre(&self) -> Pt {
+        let xs: u32 = self.iter().map(|&v| v.x).sum();
+        let ys: u32 = self.iter().map(|&v| v.y).sum();
+        Pt {
+            x: xs / self.len() as u32,
+            y: ys / self.len() as u32,
+        }
+    }
 }
