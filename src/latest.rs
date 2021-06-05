@@ -1,6 +1,6 @@
 use std::sync::{Condvar, Mutex};
 
-#[derive(Copy, Clone, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
 pub struct Token(usize);
 
 #[derive(Default)]

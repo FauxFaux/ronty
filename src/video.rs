@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 
 use anyhow::{Context, Result};
 use image::codecs::jpeg::JpegDecoder;
-use image::{ImageBuffer, ImageDecoder, Rgb};
+use image::{ImageBuffer, ImageDecoder, Rgb, RgbImage};
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
@@ -14,10 +14,7 @@ use v4l::FourCC;
 
 use crate::latest::Latest;
 
-pub fn make_frames() -> (
-    Arc<Latest<ImageBuffer<Rgb<u8>, Vec<u8>>>>,
-    JoinHandle<Result<()>>,
-) {
+pub fn make_frames() -> (Arc<Latest<RgbImage>>, JoinHandle<Result<()>>) {
     let ret = Arc::new(Latest::default());
     let frames = Arc::clone(&ret);
     let thread = thread::spawn(move || -> anyhow::Result<()> {

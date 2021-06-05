@@ -5,13 +5,14 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use dlib_face_recognition::{
-    FaceDetector, FaceDetectorTrait, LandmarkPredictor, LandmarkPredictorTrait, Point,
+    FaceDetector, FaceDetectorTrait, LandmarkPredictor, LandmarkPredictorTrait, Point, Rectangle,
 };
-use image::{ImageBuffer, Rgb};
+use image::{ImageBuffer, Rgb, RgbImage};
 use itertools::Itertools;
 
 use crate::img::{Pt, Rect};
 use crate::latest::{Latest, Token};
+use std::time::Instant;
 
 #[derive(Copy, Clone)]
 pub struct Landmarks {
@@ -25,32 +26,44 @@ pub struct Boxen {
 
 #[derive(Default)]
 pub struct Comms {
-    pub input: Latest<ImageBuffer<Rgb<u8>, Vec<u8>>>,
+    pub input: Latest<RgbImage>,
     pub output: Mutex<Boxen>,
 }
 
-pub fn main(
-    input: Arc<Latest<ImageBuffer<Rgb<u8>, Vec<u8>>>>,
-    output: Arc<Mutex<Boxen>>,
-) -> Result<()> {
+pub fn main(input: Arc<Latest<RgbImage>>, output: Arc<Mutex<Boxen>>) -> Result<()> {
     let det = FaceDetector::default();
     let landmarks = landmark_from_include();
 
     let mut token = Token::default();
+    let mut rect = Rectangle::default();
+    let mut i = 0usize;
     loop {
         let (current, image) = input.when_changed_from(token);
+        println!("{:?} -> {:?}", token, current);
         token = current;
 
+        let start = Instant::now();
+
         let matrix = dlib_face_recognition::ImageMatrix::from_image(&image);
-        let locs = det.face_locations(&matrix);
-        let r = match locs.iter().next() {
-            Some(r) => r,
-            None => continue,
-        };
+
+        i = i.wrapping_add(1);
+        if i % 3 == 1 {
+            let locs = det.face_locations(&matrix);
+            let r = match locs.iter().next() {
+                Some(r) => r,
+                None => continue,
+            };
+            rect = *r;
+
+            println!(
+                "faces {:?}",
+                Instant::now().saturating_duration_since(start)
+            );
+        }
         // for r in locs.iter()
         //     draw_rectangle(&mut image, &r, red);
 
-        let landmarks = landmarks.face_landmarks(&matrix, &r);
+        let landmarks = landmarks.face_landmarks(&matrix, &rect);
 
         let landmarks = Landmarks::from_dlib(&landmarks);
 
@@ -104,12 +117,11 @@ fn landmark_from_include() -> LandmarkPredictor {
 impl Landmarks {
     fn from_dlib(dlib: &[Point]) -> Landmarks {
         assert_eq!(68, dlib.len());
-        let clomp = |v: i64| (v.clamp(0, u32::MAX as i64) as u32);
         let inner = dlib
             .into_iter()
             .map(|p| Pt {
-                x: clomp(p.x()),
-                y: clomp(p.y()),
+                x: force_u32(p.x()),
+                y: force_u32(p.y()),
             })
             .collect::<Vec<_>>()
             .try_into()

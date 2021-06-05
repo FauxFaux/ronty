@@ -2,13 +2,14 @@ use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use image::imageops::{crop_imm, flip_horizontal, flip_vertical, resize, FilterType};
-use image::{GenericImageView, ImageBuffer, Rgb};
+use image::imageops::{crop_imm, flip_horizontal, flip_vertical, grayscale, resize, FilterType};
+use image::{GenericImageView, ImageBuffer, Rgb, RgbImage};
 use minifb::{Key, Window, WindowOptions};
 
 use crate::faces::{Boxen, Fleek};
-use crate::img::Rect;
+use crate::img::{Pt, Rect};
 use crate::video::make_frames;
+use dlib_face_recognition::{Point, Rectangle};
 
 mod faces;
 mod img;
@@ -30,11 +31,10 @@ fn main() -> Result<()> {
         }));
     }
 
-    let mut left = Win::new("left", 500, 300, 100, 100)?;
-    let mut right = Win::new("right", 500, 300, 500, 100)?;
+    let mut left = Win::new("left", 320, 240, 100, 100)?;
+    let mut right = Win::new("right", 320, 240, 500, 100)?;
     let mut mouth = Win::new("mouth", 720, 320, 100, 400)?;
     let mut debug = Win::new("debug", 1024, 768, 800, 400)?;
-    // let mut debug = Win::new("debug", 1280, 720, 800, 400)?;
 
     let mut distances = Ring::with_capacity(25);
 
@@ -89,28 +89,14 @@ fn main() -> Result<()> {
             win.update(&image)?;
         }
 
+        let mut image = image;
+
+        for pt in boxes.landmarks[0].as_ref() {
+            let red = Rgb([255, 0, 0]);
+            draw_point(&mut image, *pt, red);
+        }
+
         debug.update(&image)?;
-
-        // let bl = pick(boxes.left_eye.centre(), scale(left.w, left.h), bounds);
-        // left.update(&crop_imm(&image, bl.x, bl.y, bl.w, bl.h))?;
-        //
-        // let br = pick(boxes.right_eye.centre(), scale(right.w, right.h), bounds);
-        // right.update(&crop_imm(&image, br.x, br.y, br.w, br.h))?;
-        //
-        // let bm = pick(boxes.mouth.centre(), scale(mouth.w, mouth.h), bounds);
-        // mouth.update(&crop_imm(&image, bm.x, bm.y, bm.w, bm.h))?;
-
-        // let (w, h) = image.dimensions();
-        // let xscale = (w as f32) / (left.w as f32);
-        // let yscale = (h as f32) / (left.h as f32);
-        // let scale = xscale.max(yscale);
-        //
-        // let image = resize(
-        //     &image,
-        //     ((w as f32) / scale) as u32,
-        //     ((h as f32) / scale) as u32,
-        //     FilterType::Triangle,
-        // );
     }
 }
 
@@ -204,25 +190,25 @@ fn image_from_yuyv(buf: &[u8]) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     image
 }
 
-#[cfg(never)]
-fn draw_rectangle(image: &mut RgbImage, rect: &Rectangle, colour: Rgb<u8>) {
-    for x in rect.left..rect.right {
-        image.put_pixel(x as u32, rect.top as u32, colour);
-        image.put_pixel(x as u32, rect.bottom as u32, colour);
+fn draw_rectangle(image: &mut RgbImage, rect: Rect, colour: Rgb<u8>) {
+    let r = rect.x + rect.w;
+    let b = rect.y + rect.h;
+    for x in rect.x..r {
+        image.put_pixel(x, rect.y, colour);
+        image.put_pixel(x, b, colour);
     }
 
-    for y in rect.top..rect.bottom {
-        image.put_pixel(rect.left as u32, y as u32, colour);
-        image.put_pixel(rect.right as u32, y as u32, colour);
+    for y in rect.y..b {
+        image.put_pixel(rect.x, y, colour);
+        image.put_pixel(r, y, colour);
     }
 }
 
-#[cfg(never)]
-fn draw_point(image: &mut RgbImage, point: &Point, colour: Rgb<u8>) {
-    image.put_pixel(point.x() as u32, point.y() as u32, colour);
-    image.put_pixel(point.x() as u32 + 1, point.y() as u32, colour);
-    image.put_pixel(point.x() as u32 + 1, point.y() as u32 + 1, colour);
-    image.put_pixel(point.x() as u32, point.y() as u32 + 1, colour);
+fn draw_point(image: &mut RgbImage, point: Pt, colour: Rgb<u8>) {
+    image.put_pixel(point.x, point.y, colour);
+    image.put_pixel(point.x + 1, point.y, colour);
+    image.put_pixel(point.x + 1, point.y + 1, colour);
+    image.put_pixel(point.x, point.y + 1, colour);
 }
 
 struct Ring<T> {
