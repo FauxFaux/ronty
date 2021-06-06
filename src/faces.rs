@@ -1,74 +1,40 @@
 use std::convert::TryInto;
 use std::io;
 use std::io::Write as _;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use anyhow::Result;
-use dlib_face_recognition::{
-    FaceDetector, FaceDetectorTrait, LandmarkPredictor, LandmarkPredictorTrait, Point, Rectangle,
-};
-use image::{ImageBuffer, Rgb, RgbImage};
+use dlib_face_recognition::FaceDetector;
+use dlib_face_recognition::FaceDetectorTrait;
+use dlib_face_recognition::LandmarkPredictor;
+use dlib_face_recognition::LandmarkPredictorTrait;
+use dlib_face_recognition::Point;
+use dlib_face_recognition::Rectangle;
+use image::RgbImage;
 use itertools::Itertools;
 
 use crate::img::{Pt, Rect};
 use crate::latest::{Latest, Token};
-use std::time::Instant;
 
 #[derive(Copy, Clone)]
 pub struct Landmarks {
     inner: [Pt; 68],
 }
 
-#[derive(Clone, Default)]
-pub struct Boxen {
-    pub landmarks: Vec<Landmarks>,
-}
-
-#[derive(Default)]
-pub struct Comms {
-    pub input: Latest<RgbImage>,
-    pub output: Mutex<Boxen>,
-}
-
-pub fn main(input: Arc<Latest<RgbImage>>, output: Arc<Mutex<Boxen>>) -> Result<()> {
+pub fn find_faces(input: Arc<Latest<RgbImage>>, output: Arc<Mutex<Vec<Rectangle>>>) -> Result<()> {
     let det = FaceDetector::default();
-    let landmarks = landmark_from_include();
 
     let mut token = Token::default();
-    let mut rect = Rectangle::default();
-    let mut i = 0usize;
     loop {
         let (current, image) = input.when_changed_from(token);
         println!("{:?} -> {:?}", token, current);
         token = current;
 
-        let start = Instant::now();
-
         let matrix = dlib_face_recognition::ImageMatrix::from_image(&image);
-
-        i = i.wrapping_add(1);
-        if i % 3 == 1 {
-            let locs = det.face_locations(&matrix);
-            let r = match locs.iter().next() {
-                Some(r) => r,
-                None => continue,
-            };
-            rect = *r;
-
-            println!(
-                "faces {:?}",
-                Instant::now().saturating_duration_since(start)
-            );
-        }
-        // for r in locs.iter()
-        //     draw_rectangle(&mut image, &r, red);
-
-        let landmarks = landmarks.face_landmarks(&matrix, &rect);
-
-        let landmarks = Landmarks::from_dlib(&landmarks);
-
+        let locs = det.face_locations(&matrix);
         let mut output = output.lock().expect("panicked");
-        output.landmarks = vec![landmarks];
+        *output = locs.to_vec();
     }
 }
 
@@ -99,6 +65,33 @@ fn minmax_by<T, F: FnMut(&&T) -> i64>(items: &[T], key: F) -> (&T, &T) {
         .minmax_by_key(key)
         .into_option()
         .expect("not empty")
+}
+
+pub struct Predictor {
+    inner: LandmarkPredictor,
+}
+
+impl Predictor {
+    pub fn from_include() -> Self {
+        Predictor {
+            inner: landmark_from_include(),
+        }
+    }
+
+    pub fn landmarks_from_faces(&self, image: &RgbImage, faces: &[Rectangle]) -> Vec<Landmarks> {
+        let matrix = dlib_face_recognition::ImageMatrix::from_image(image);
+        faces
+            .iter()
+            .map(|rect| self.inner.face_landmarks(&matrix, rect))
+            .map(|l| Landmarks::from_dlib(&l))
+            .collect()
+    }
+}
+
+impl Default for Predictor {
+    fn default() -> Self {
+        Self::from_include()
+    }
 }
 
 fn landmark_from_include() -> LandmarkPredictor {

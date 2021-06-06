@@ -3,13 +3,16 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use image::codecs::jpeg::JpegDecoder;
-use image::{ImageBuffer, ImageDecoder, Rgb, RgbImage};
+use image::ImageDecoder;
+use image::RgbImage;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
-use v4l::prelude::*;
+use v4l::io::mmap::Stream as MmapStream;
 use v4l::video::Capture;
+use v4l::Device;
 use v4l::FourCC;
 
 use crate::latest::Latest;

@@ -1,15 +1,25 @@
 use std::convert::TryFrom;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use anyhow::Result;
-use image::imageops::{crop_imm, flip_horizontal, flip_vertical, grayscale, resize, FilterType};
-use image::{GenericImageView, ImageBuffer, Rgb, RgbImage};
-use minifb::{Key, Window, WindowOptions};
+use image::GenericImageView;
+use image::imageops::crop_imm;
+use image::imageops::FilterType;
+use image::imageops::flip_horizontal;
+use image::imageops::flip_vertical;
+use image::imageops::resize;
+use image::Rgb;
+use image::RgbImage;
+use minifb::Key;
+use minifb::Window;
+use minifb::WindowOptions;
 
-use crate::faces::{Boxen, Fleek};
-use crate::img::{Pt, Rect};
+use crate::faces::Fleek;
+use crate::faces::Predictor;
+use crate::img::Pt;
+use crate::img::Rect;
 use crate::video::make_frames;
-use dlib_face_recognition::{Point, Rectangle};
 
 mod faces;
 mod img;
@@ -22,14 +32,16 @@ fn main() -> Result<()> {
     let (frames, frame_thread) = make_frames();
     threads.push(frame_thread);
 
-    let boxen = Arc::new(Mutex::new(Boxen::default()));
+    let boxen = Arc::new(Mutex::new(Default::default()));
     {
         let frames = Arc::clone(&frames);
         let boxen = Arc::clone(&boxen);
         threads.push(std::thread::spawn(move || -> Result<()> {
-            faces::main(frames, boxen)
+            faces::find_faces(frames, boxen)
         }));
     }
+
+    let landmark_predictor = Predictor::default();
 
     let mut left = Win::new("left", 320, 240, 100, 100)?;
     let mut right = Win::new("right", 320, 240, 500, 100)?;
@@ -51,15 +63,17 @@ fn main() -> Result<()> {
 
         let boxes = boxen.lock().expect("panicked").clone();
 
-        if boxes.landmarks.is_empty() {
+        if boxes.is_empty() {
             continue;
         }
 
-        let left_eye = boxes.landmarks[0].left_eye().centre();
-        let right_eye = boxes.landmarks[0].right_eye().centre();
-        let mouth_centre = boxes.landmarks[0].mouth().centre();
-
         let image = frames.peek();
+
+        let landmarks = landmark_predictor.landmarks_from_faces(&image, &boxes);
+
+        let left_eye = landmarks[0].left_eye().centre();
+        let right_eye = landmarks[0].right_eye().centre();
+        let mouth_centre = landmarks[0].mouth().centre();
 
         let pupil_distance = distance(left_eye.tuple(), right_eye.tuple());
 
@@ -91,7 +105,7 @@ fn main() -> Result<()> {
 
         let mut image = image;
 
-        for pt in boxes.landmarks[0].as_ref() {
+        for pt in landmarks[0].as_ref() {
             let red = Rgb([255, 0, 0]);
             draw_point(&mut image, *pt, red);
         }
