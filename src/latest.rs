@@ -50,3 +50,9 @@ impl<T: Clone> Latest<T> {
         self.cv.notify_all();
     }
 }
+
+impl Token {
+    pub(crate) fn gap_since(&self, other: Token) -> usize {
+        self.0 - other.0
+    }
+}

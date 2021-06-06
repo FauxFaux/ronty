@@ -63,23 +63,25 @@ fn main() -> Result<()> {
 
         let boxes = boxen.lock().expect("panicked").clone();
 
-        if boxes.is_empty() {
-            continue;
-        }
-
         let image = frames.peek();
 
-        let landmarks = landmark_predictor.landmarks_from_faces(&image, &boxes);
+        let picked = boxes
+            .into_iter()
+            .next()
+            .map(|rect| landmark_predictor.landmarks_from_faces(&image, &[rect])[0]);
 
-        let left_eye = landmarks[0].left_eye().centre();
-        let right_eye = landmarks[0].right_eye().centre();
-        let mouth_centre = landmarks[0].mouth().centre();
+        if let Some(landmarks) = picked {
+            let left_eye = landmarks.left_eye().centre();
+            let right_eye = landmarks.right_eye().centre();
+            let mouth_centre = landmarks.mouth().centre();
+            let pupil_distance = distance(left_eye.tuple(), right_eye.tuple());
 
-        let pupil_distance = distance(left_eye.tuple(), right_eye.tuple());
+            distances.push(pupil_distance);
+            left_centres.push(left_eye.tuple());
+            right_centres.push(right_eye.tuple());
+            mouth_centres.push(mouth_centre.tuple());
+        }
 
-        distances.push(pupil_distance);
-
-        // println!("{} {}", pupil_distance, distances.mean());
         let pupil_distance = distances.mean();
 
         let bounds = image.dimensions();
@@ -88,15 +90,14 @@ fn main() -> Result<()> {
 
         let scale = |w: u32, h: u32| ((w as f32 / s) as u32, (h as f32 / s) as u32);
 
-        left_centres.push(left_eye.tuple());
-        right_centres.push(right_eye.tuple());
-        mouth_centres.push(mouth_centre.tuple());
-
         for (c, win) in [
             (left_centres.mean(), &mut left),
             (right_centres.mean(), &mut right),
             (mouth_centres.mean(), &mut mouth),
         ] {
+            if (0, 0) == c {
+                continue;
+            }
             let bx = pick(c, scale(win.w, win.h), bounds);
             let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
             let image = resize(&image, win.w, win.h, FilterType::Triangle);
@@ -105,9 +106,11 @@ fn main() -> Result<()> {
 
         let mut image = image;
 
-        for pt in landmarks[0].as_ref() {
-            let red = Rgb([255, 0, 0]);
-            draw_point(&mut image, *pt, red);
+        if let Some(picked) = picked {
+            for pt in picked.as_ref() {
+                let red = Rgb([255, 0, 0]);
+                draw_point(&mut image, *pt, red);
+            }
         }
 
         debug.update(&image)?;

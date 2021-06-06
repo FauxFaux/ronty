@@ -28,7 +28,10 @@ pub fn find_faces(input: Arc<Latest<RgbImage>>, output: Arc<Mutex<Vec<Rectangle>
     let mut token = Token::default();
     loop {
         let (current, image) = input.when_changed_from(token);
-        println!("{:?} -> {:?}", token, current);
+        let gap = current.gap_since(token);
+        if gap > 1 {
+            println!("{} frame drop at face detector", gap - 1);
+        }
         token = current;
 
         let matrix = dlib_face_recognition::ImageMatrix::from_image(&image);
