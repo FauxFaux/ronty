@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use anyhow::Result;
-use image::GenericImageView;
 use image::imageops::crop_imm;
-use image::imageops::FilterType;
 use image::imageops::flip_horizontal;
 use image::imageops::flip_vertical;
 use image::imageops::resize;
+use image::imageops::FilterType;
+use image::GenericImageView;
 use image::Rgb;
 use image::RgbImage;
 use minifb::Key;
@@ -183,9 +183,19 @@ fn distance((ax, ay): (u32, u32), (bx, by): (u32, u32)) -> f32 {
 }
 
 fn pick((cx, cy): (u32, u32), (w, h): (u32, u32), (bw, bh): (u32, u32)) -> Rect {
-    let x = cx - w / 2;
-    let y = cy - h / 2;
-    // TODO: in bounds
+    let mut x = cx.saturating_sub(w / 2);
+    let mut y = cy.saturating_sub(h / 2);
+
+    let r = x + w;
+    let b = y + h;
+
+    // bw: 700
+    // r: 750
+    // move x 50 px left
+
+    x -= r.saturating_sub(bw);
+    y -= b.saturating_sub(bh);
+
     Rect { x, y, w, h }
 }
 
@@ -219,10 +229,13 @@ fn draw_rectangle(image: &mut RgbImage, rect: Rect, colour: Rgb<u8>) {
 }
 
 fn draw_point(image: &mut RgbImage, point: Pt, colour: Rgb<u8>) {
-    image.put_pixel(point.x, point.y, colour);
-    image.put_pixel(point.x + 1, point.y, colour);
-    image.put_pixel(point.x + 1, point.y + 1, colour);
-    image.put_pixel(point.x, point.y + 1, colour);
+    let (bw, bh) = image.dimensions();
+    let mut poke = |x: u32, y: u32| image.put_pixel(x.clamp(0, bw - 1), y.clamp(0, bh - 1), colour);
+
+    poke(point.x, point.y);
+    poke(point.x + 1, point.y);
+    poke(point.x + 1, point.y + 1);
+    poke(point.x, point.y + 1);
 }
 
 struct Ring<T> {
