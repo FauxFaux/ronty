@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use anyhow::Result;
-use image::imageops::crop_imm;
+use image::imageops::{crop_imm, flip_horizontal_in_place};
 use image::imageops::flip_horizontal;
 use image::imageops::flip_vertical;
 use image::imageops::resize;
@@ -11,7 +11,7 @@ use image::imageops::FilterType;
 use image::GenericImageView;
 use image::Rgb;
 use image::RgbImage;
-use minifb::Key;
+use minifb::{Key, KeyRepeat};
 use minifb::Window;
 use minifb::WindowOptions;
 
@@ -25,6 +25,12 @@ mod faces;
 mod img;
 mod latest;
 mod video;
+
+#[derive(Default)]
+struct Flip {
+    horizontal: bool,
+    vertical: bool,
+}
 
 fn main() -> Result<()> {
     let mut threads = Vec::new();
@@ -46,7 +52,7 @@ fn main() -> Result<()> {
     let mut left = Win::new("left", 320, 240, 100, 100)?;
     let mut right = Win::new("right", 320, 240, 500, 100)?;
     let mut mouth = Win::new("mouth", 720, 320, 100, 400)?;
-    let mut debug = Win::new("debug", 1024, 768, 800, 400)?;
+    let mut debug = Win::new("debug", 1024, 768, 2560 + 100, 100)?;
 
     let mut distances = Ring::with_capacity(25);
 
@@ -54,23 +60,35 @@ fn main() -> Result<()> {
     let mut right_centres = Ring::with_capacity(5);
     let mut mouth_centres = Ring::with_capacity(5);
 
+    let left_flip = Flip::default();
+    let right_flip = Flip::default();
+    let mouth_flip = Flip::default();
+
+    let mut relative_zoom = 8.;
+
     loop {
-        for win in [&left, &right, &mouth] {
+        for win in [&left, &right, &mouth, &debug] {
             if !win.inner.is_open() || win.inner.is_key_down(Key::Q) {
                 return Ok(());
             }
+
+            if win.inner.is_key_pressed(Key::Key0, KeyRepeat::Yes) {
+                relative_zoom += 0.4;
+            }
+            if win.inner.is_key_pressed(Key::Key9, KeyRepeat::Yes) {
+                relative_zoom -= 0.4;
+            }
+
+
         }
 
         let boxes = boxen.lock().expect("panicked").clone();
 
         let image = frames.peek();
 
-        let picked = boxes
-            .into_iter()
-            .next()
-            .map(|rect| landmark_predictor.landmarks_from_faces(&image, &[rect])[0]);
+        let landmarks = landmark_predictor.landmarks_from_faces(&image, &boxes);
 
-        if let Some(landmarks) = picked {
+        if let Some(landmarks) = landmarks.get(0) {
             let left_eye = landmarks.left_eye().centre();
             let right_eye = landmarks.right_eye().centre();
             let mouth_centre = landmarks.mouth().centre();
@@ -86,33 +104,41 @@ fn main() -> Result<()> {
 
         let bounds = image.dimensions();
 
-        let s = (80. * 8.) / pupil_distance;
+        // 80px is our "reference" pupil distance (it's very arbitrary)
+        let s = (80. * relative_zoom) / pupil_distance;
 
         let scale = |w: u32, h: u32| ((w as f32 / s) as u32, (h as f32 / s) as u32);
 
-        for (c, win) in [
-            (left_centres.mean(), &mut left),
-            (right_centres.mean(), &mut right),
-            (mouth_centres.mean(), &mut mouth),
+        for (c, win, flip) in [
+            (left_centres.mean(), &mut left, &left_flip),
+            (right_centres.mean(), &mut right, &right_flip),
+            (mouth_centres.mean(), &mut mouth, &mouth_flip),
         ] {
             if (0, 0) == c {
                 continue;
             }
             let bx = pick(c, scale(win.w, win.h), bounds);
             let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
-            let image = resize(&image, win.w, win.h, FilterType::Triangle);
+            let mut image = resize(&image, win.w, win.h, FilterType::Triangle);
+            if flip.horizontal {
+                flip_horizontal_in_place(&mut image);
+            }
+            if flip.vertical {
+                flip_horizontal_in_place(&mut image);
+            }
             win.update(&image)?;
         }
 
         let mut image = image;
 
-        if let Some(picked) = picked {
+        for picked in landmarks {
             for pt in picked.as_ref() {
                 let red = Rgb([255, 0, 0]);
                 draw_point(&mut image, *pt, red);
             }
         }
 
+        let image = resize(&image, debug.w, debug.h, FilterType::Nearest);
         debug.update(&image)?;
     }
 }
