@@ -105,7 +105,7 @@ fn landmark_from_include() -> LandmarkPredictor {
     )
     .expect("writing file");
     t.flush().expect("flushing file");
-    let landmarks = LandmarkPredictor::new(t.path()).expect("static data");
+    let landmarks = LandmarkPredictor::open(t.path()).expect("static data");
     t.close().expect("removing temporary file");
     landmarks
 }

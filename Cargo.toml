@@ -5,7 +5,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-dlib-face-recognition = "0.2.3"
+dlib-face-recognition = "0.3"
 itertools = "0.10"
 minifb = "0.28"
 num-integer = "0.1"
@@ -15,7 +15,7 @@ v4l = "0.14"
 [dependencies.image]
 default-features = false
 features = ["jpeg_rayon"]
-version = "0.23"
+version = "0.24"
 
 [profile.release]
 #lto = true

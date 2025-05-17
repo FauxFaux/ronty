@@ -117,7 +117,7 @@ fn main() -> Result<()> {
             }
             let bx = pick(c, scale(win.w, win.h), bounds);
             let image = crop_imm(&image, bx.x, bx.y, bx.w, bx.h);
-            let mut image = resize(&image, win.w, win.h, FilterType::Triangle);
+            let mut image = resize(&*image, win.w, win.h, FilterType::Triangle);
             if flip.horizontal {
                 flip_horizontal_in_place(&mut image);
             }
