@@ -3,8 +3,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
-use image::imageops::flip_horizontal;
-use image::imageops::flip_vertical;
 use image::imageops::resize;
 use image::imageops::FilterType;
 use image::imageops::{crop_imm, flip_horizontal_in_place};
