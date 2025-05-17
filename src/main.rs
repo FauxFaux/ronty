@@ -157,7 +157,7 @@ impl Win {
             uw,
             uh,
             WindowOptions {
-                // borderless: true,
+                borderless: true,
                 ..WindowOptions::default()
             },
         )
@@ -168,8 +168,7 @@ impl Win {
 
         inner.set_position(x, y);
 
-        // Limit to max ~60 fps update rate
-        inner.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+        inner.set_target_fps(60);
 
         Ok(Win {
             inner,
