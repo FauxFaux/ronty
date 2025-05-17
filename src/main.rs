@@ -2,18 +2,18 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use anyhow::Result;
-use image::imageops::{crop_imm, flip_horizontal_in_place};
+use anyhow::{anyhow, Context, Result};
 use image::imageops::flip_horizontal;
 use image::imageops::flip_vertical;
 use image::imageops::resize;
 use image::imageops::FilterType;
+use image::imageops::{crop_imm, flip_horizontal_in_place};
 use image::GenericImageView;
 use image::Rgb;
 use image::RgbImage;
-use minifb::{Key, KeyRepeat};
 use minifb::Window;
 use minifb::WindowOptions;
+use minifb::{Key, KeyRepeat};
 
 use crate::faces::Fleek;
 use crate::faces::Predictor;
@@ -49,10 +49,10 @@ fn main() -> Result<()> {
 
     let landmark_predictor = Predictor::default();
 
-    let mut left = Win::new("left", 320, 240, 100, 100)?;
-    let mut right = Win::new("right", 320, 240, 500, 100)?;
-    let mut mouth = Win::new("mouth", 720, 320, 100, 400)?;
-    let mut debug = Win::new("debug", 1024, 768, 2560 + 100, 100)?;
+    let mut left = Win::new("left", 320, 240, 100, 100).context("left")?;
+    let mut right = Win::new("right", 320, 240, 500, 100).context("right")?;
+    let mut mouth = Win::new("mouth", 720, 320, 100, 400).context("mouth")?;
+    let mut debug = Win::new("debug", 1024, 768, 2560 + 100, 100).context("debug")?;
 
     let mut distances = Ring::with_capacity(25);
 
@@ -78,8 +78,6 @@ fn main() -> Result<()> {
             if win.inner.is_key_pressed(Key::Key9, KeyRepeat::Yes) {
                 relative_zoom -= 0.4;
             }
-
-
         }
 
         let boxes = boxen.lock().expect("panicked").clone();
@@ -159,10 +157,12 @@ impl Win {
             uw,
             uh,
             WindowOptions {
-                borderless: true,
+                // borderless: true,
                 ..WindowOptions::default()
             },
-        )?;
+        )
+        .map_err(|e| anyhow!("{e:?}"))
+        .context("raw window call")?;
 
         let ul = uw.checked_mul(uh).expect("too big for memory");
 

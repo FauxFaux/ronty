@@ -5,19 +5,17 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
+dlib-face-recognition = "0.2.3"
 itertools = "0.10"
-minifb = "0.19"
+minifb = "0.28"
 num-integer = "0.1"
 tempfile = "3.2.0"
-v4l = "0.12"
+v4l = "0.14"
 
 [dependencies.image]
 default-features = false
 features = ["jpeg_rayon"]
 version = "0.23"
-
-[dependencies.dlib-face-recognition]
-git = "https://github.com/FauxFaux/dlib-face-recognition"
 
 [profile.release]
 #lto = true
