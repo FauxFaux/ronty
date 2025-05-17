@@ -13,12 +13,14 @@ use minifb::Window;
 use minifb::WindowOptions;
 use minifb::{Key, KeyRepeat};
 
+use crate::camera::print_camera_info;
 use crate::faces::Fleek;
 use crate::faces::Predictor;
 use crate::img::Pt;
 use crate::img::Rect;
 use crate::video::make_frames;
 
+mod camera;
 mod faces;
 mod img;
 mod latest;
@@ -31,6 +33,8 @@ struct Flip {
 }
 
 fn main() -> Result<()> {
+    print_camera_info()?;
+
     let mut threads = Vec::new();
 
     let (frames, frame_thread) = make_frames();
