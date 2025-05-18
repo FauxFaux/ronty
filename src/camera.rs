@@ -2,23 +2,50 @@ use anyhow::{anyhow, Context, Error, Result};
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use v4l::framesize::FrameSizeEnum;
 use v4l::video::Capture;
 use v4l::Device;
 use v4l::FourCC;
 
-pub fn print_camera_info() -> Result<()> {
+const PREFIXES: [&'static str; 7] = [
+    "video",
+    "radio",
+    "vbi",
+    "swradio",
+    "v4l-subdev",
+    "v4l-touch",
+    "media",
+];
+
+pub fn list_devices() -> Result<Vec<(&'static str, Option<u32>, PathBuf)>> {
+    let mut devices = Vec::new();
     for path in fs::read_dir("/dev")? {
         let path = match path.ok() {
             Some(path) => path,
             None => continue,
         };
-        let path = match path.file_name().to_str() {
-            Some(name) if name.starts_with("video") => path,
+        let name = path.file_name();
+        let name = match name.to_str() {
+            Some(name) => name,
             _ => continue,
         };
-        let path = path.path();
+        if let Some(val) = PREFIXES.iter().find_map(|prefix| {
+            let suffix = match name.strip_prefix(prefix) {
+                Some(suffix) => suffix,
+                None => return None,
+            };
+            Some((*prefix, suffix.parse().ok(), path.path()))
+        }) {
+            devices.push(val);
+        }
+    }
+    devices.sort();
+    Ok(devices)
+}
+
+pub fn print_camera_info() -> Result<()> {
+    for (_, _, path) in list_devices()? {
         if let Err(e) =
             print_device_info(&path).with_context(|| anyhow!("Camera device {}", path.display()))
         {
