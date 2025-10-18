@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use v4l::framesize::FrameSizeEnum;
-use v4l::video::Capture;
 use v4l::Device;
 use v4l::FourCC;
+use v4l::framesize::FrameSizeEnum;
+use v4l::video::Capture;
 
 const PREFIXES: [&'static str; 7] = [
     "video",

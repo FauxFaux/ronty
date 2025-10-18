@@ -2,13 +2,13 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use anyhow::{anyhow, Context, Result};
-use image::imageops::resize;
-use image::imageops::FilterType;
-use image::imageops::{crop_imm, flip_horizontal_in_place};
+use anyhow::{Context, Result, anyhow};
 use image::GenericImageView;
 use image::Rgb;
 use image::RgbImage;
+use image::imageops::FilterType;
+use image::imageops::resize;
+use image::imageops::{crop_imm, flip_horizontal_in_place};
 use minifb::Window;
 use minifb::WindowOptions;
 use minifb::{Key, KeyRepeat};

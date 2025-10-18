@@ -44,7 +44,7 @@ impl<T: Clone> Latest<T> {
     pub fn put(&self, val: T) {
         {
             let mut guard = self.mutex.lock().expect("panicked");
-            guard.0 = Token(guard.0 .0.wrapping_add(1));
+            guard.0 = Token(guard.0.0.wrapping_add(1));
             guard.1 = Some(val);
         }
         self.cv.notify_all();
